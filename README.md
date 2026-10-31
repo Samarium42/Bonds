@@ -12,7 +12,7 @@ models, sample cheaply from each, and report the interval of prices rather than 
 | Phase | What | State |
 |---|---|---|
 | 0 | GBM + LSM pricer, binomial cross-check, statistical tests | done |
-| 1 | Path-vector flow matching, stylized-fact validation | next |
+| 1 | Path-vector flow matching, stylized-fact validation | code done, data-scarcity problem found (see below) |
 | 2 | Conditioning on theta = (sigma, s) | todo |
 | 3 | Wire generator into pricer | todo |
 | 4 | Credal sweep and bounds, backtests | todo |
@@ -102,3 +102,41 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m pytest -q          # or: python run_tests.py
 ```
+
+## Phase 1 findings: flow matching on whole paths
+
+**Method.** A path is x in R^N (standardised weekly log-returns). Conditional flow matching with the straight
+path x_t = (1-t) x0 + t x1, x0 ~ N(0,I); loss E || v_theta(x_t,t) - (x1 - x0) ||^2; sampling integrates
+dx/dt = v_theta with 25 Heun steps. The network is a dilated 1D conv stack whose receptive field (>250 steps)
+covers the full path, so dependence across the horizon is learnable without autoregression.
+Samples are made risk-neutral by `martingale_correct`: S_k <- S0 e^{(r-q)t_k} S_k / mean(S_k).
+
+**Test bed.** A synthetic market with known truth (GJR-GARCH(1,1), Student-t(5) innovations: fat tails,
+clustering, leverage), so the generator can be scored against the true law, not just against a finite sample.
+
+**Result 1, the objective and sampler are correct.** On Gaussian data the final CFM loss is within 3% of the
+analytic floor and the sampled std within 5% of truth (`tests/test_flow.py`).
+
+**Result 2, with enough independent windows the generator is accurate.**
+
+| Setting | std ref / gen | ACF of squares, lags 1-4 (ref vs gen) | Energy test p |
+|---|---|---|---|
+| N=156, 7,692 windows | 1.04 / 1.02 | 0.072 0.069 0.061 0.059 vs 0.075 0.070 0.062 0.057 | 0.62 (not rejected) |
+| N=52, 1,104 windows (scarce) | 1.04 / 0.80 | 0.024 0.020 0.013 0.012 vs 0.034 0.045 0.013 -0.005 | 0.01 (rejected) |
+| N=156, 896 windows (scarce) | 0.99 / 0.62 | see `scripts/validate_synthetic.py` | 0.005 (rejected) |
+
+**Result 3, data scarcity is the binding constraint.** In the scarce runs the generated ACF matches the *training
+sample's* ACF (0.034, 0.045 vs train 0.028, 0.043) rather than the truth: the model fits sampling noise, and its
+scale contracts. The number that matters is the count of INDEPENDENT windows, not overlapping ones: about
+(number of weeks) / N. Eight names x 600 weeks at N=52 is roughly 90 independent windows. The real basket at
+N=156 weekly would be of the order of 40. So the direct recipe "train on historical windows" cannot be expected
+to work on weekly equity data without a different source of training paths.
+
+**Ruled out (each tested on controlled data).** GroupNorm vs none vs per-position LayerNorm; global-pooling
+blocks; x-prediction instead of velocity prediction; a Student-t to Gaussian marginal transform. None changes the
+outcome once the sampler is evaluated correctly. An early training monitor that used 10 Euler steps overstated
+shrinkage and led to a wrong "heavy tails are the cause" reading; the monitor now uses Heun.
+
+**Open decision for Phase 2.** Either (a) train the flow on paths from a calibrated parametric family that spans the
+credal set (flow = amortised simulator over theta; honest about what it is), or (b) shift to higher-frequency data
+to raise the independent-window count, or (c) both. Not decided yet.
