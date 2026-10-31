@@ -39,3 +39,13 @@ def test_family_clustering_increases_with_rho():
 def test_cond_encoding():
     c = cond_from_rho(np.array([0.95, 0.98]))
     assert c.shape == (2, 1) and abs(c[0, 0]) < 1e-6 and abs(c[1, 0] - 1.0) < 1e-5
+
+
+def test_leverage_se_is_calibrated():
+    """On iid fat-tailed noise (true leverage 0) the z-score of the difference of two independent estimates is ~N(0,1)."""
+    rng = np.random.default_rng(0); zs = []
+    for _ in range(25):
+        a = rng.standard_t(5, (1500, 52)); b = rng.standard_t(5, (1500, 52))
+        (la, sa), (lb, sb) = sf.leverage_se(a, n_boot=60), sf.leverage_se(b, n_boot=60)
+        zs.append((la - lb) / np.hypot(sa, sb))
+    assert abs(np.mean(zs)) < 0.6 and 0.6 < np.std(zs, ddof=1) < 1.5, (np.mean(zs), np.std(zs, ddof=1))

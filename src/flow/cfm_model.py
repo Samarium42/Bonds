@@ -62,12 +62,12 @@ class Block(nn.Module):
 class VelocityNet(nn.Module):
     def __init__(self, N: int, ch: int = 64, emb: int = 128, cond_dim: int = 0,
                  dilations=(1, 2, 4, 8, 16, 32, 64, 1, 4, 16), norm: str = "group",
-                 glob: bool = False, param: str = "v"):
+                 glob: bool = False, param: str = "v", feat: bool = False):
         super().__init__()
-        self.N, self.cond_dim, self.emb, self.param = N, cond_dim, emb, param
+        self.N, self.cond_dim, self.emb, self.param, self.feat = N, cond_dim, emb, param, feat
         self.t_mlp = nn.Sequential(nn.Linear(emb, emb), nn.SiLU(), nn.Linear(emb, emb))
         self.c_mlp = nn.Sequential(nn.Linear(cond_dim, emb), nn.SiLU(), nn.Linear(emb, emb)) if cond_dim else None
-        self.inp = nn.Conv1d(2, ch, 1)                       # channels: x_t and position k/N
+        self.inp = nn.Conv1d(4 if feat else 2, ch, 1)         # channels: x_t, position k/N (+ x^2, tanh(x) if feat)
         self.blocks = nn.ModuleList(Block(ch, d, emb, norm, glob) for d in dilations)
         self.out = nn.Conv1d(ch, 1, 1)
         nn.init.zeros_(self.out.weight)
@@ -84,7 +84,10 @@ class VelocityNet(nn.Module):
         e = self.t_mlp(sinusoidal(t, self.emb))
         if self.c_mlp is not None:
             e = e + self.c_mlp(cond)
-        h = self.inp(torch.cat([x[:, None, :], self.pos.expand(x.shape[0], -1, -1)], dim=1))
+        chans = [x[:, None, :], self.pos.expand(x.shape[0], -1, -1)]
+        if self.feat:            # even/odd features make the sign asymmetry (leverage) cheap to represent
+            chans += [x[:, None, :] ** 2, torch.tanh(x)[:, None, :]]
+        h = self.inp(torch.cat(chans, dim=1))
         for b in self.blocks:
             h = b(h, e)
         return self.out(h)[:, 0, :]

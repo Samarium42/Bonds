@@ -13,7 +13,7 @@ models, sample cheaply from each, and report the interval of prices rather than 
 |---|---|---|
 | 0 | GBM + LSM pricer, binomial cross-check, statistical tests | done |
 | 1 | Path-vector flow matching, stylized-fact validation | code done, data-scarcity problem found (see below) |
-| 2 | Flow conditioned on persistence rho, trained on a daily-calibrated family | done in range; leverage under-captured |
+| 2 | Flow conditioned on persistence rho, trained on a daily-calibrated family | done in range; bulk leverage captured, extreme-tail slightly thin at high rho |
 | 3 | Wire generator into pricer | wired; small check passes (low power), full grid to run on Mac |
 | 4 | Credal sweep and bounds, backtests | todo |
 | 5 | Credit as a jump process | stretch |

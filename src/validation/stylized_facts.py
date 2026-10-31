@@ -118,3 +118,17 @@ def report(real: np.ndarray, gen: np.ndarray, train: np.ndarray | None = None, n
     if train is not None:
         out["memorisation_ratio"] = memorisation_ratio(gen, train, real)
     return out
+
+
+def leverage_se(W: np.ndarray, lag: int = 1, n_boot: int = 200, seed: int = 0):
+    """corr(r_t, r_{t+lag}^2) with a bootstrap-over-windows standard error (windows are independent paths)."""
+    a = W[:, :-lag]; b = W[:, lag:] ** 2
+    S = np.stack([a.sum(1), b.sum(1), (a * b).sum(1), (a * a).sum(1), (b * b).sum(1)], axis=1)
+    n_per = a.shape[1]
+
+    def corr(T):
+        n = n_per * len(T); sa, sb, sab, saa, sbb = T.sum(0)
+        return (sab / n - sa * sb / n ** 2) / np.sqrt((saa / n - (sa / n) ** 2) * (sbb / n - (sb / n) ** 2))
+    rng = np.random.default_rng(seed)
+    boots = [corr(S[rng.integers(0, len(S), len(S))]) for _ in range(n_boot)]
+    return float(corr(S)), float(np.std(boots, ddof=1))

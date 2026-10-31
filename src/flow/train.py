@@ -19,10 +19,10 @@ from src.flow.cfm_model import VelocityNet, cfm_loss
 
 def train(X: np.ndarray, steps: int = 3000, batch: int = 128, lr: float = 1e-3, ema_decay: float = 0.998,
           ch: int = 64, seed: int = 0, log_every: int = 250, device: str = "cpu", monitor: bool = True,
-          norm: str = "group", glob: bool = False, param: str = "v", C: np.ndarray | None = None):
+          norm: str = "group", glob: bool = False, param: str = "v", C: np.ndarray | None = None, feat: bool = False):
     torch.manual_seed(seed)
     N = X.shape[1]
-    model = VelocityNet(N, ch=ch, norm=norm, glob=glob, param=param, cond_dim=0 if C is None else C.shape[1]).to(device)
+    model = VelocityNet(N, ch=ch, norm=norm, glob=glob, param=param, feat=feat, cond_dim=0 if C is None else C.shape[1]).to(device)
     ema = copy.deepcopy(model).eval()
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=lr, total_steps=steps, pct_start=0.05)
@@ -53,12 +53,12 @@ def train(X: np.ndarray, steps: int = 3000, batch: int = 128, lr: float = 1e-3, 
 
 
 def save(model: VelocityNet, path: str, meta: dict) -> None:
-    torch.save({"state": model.state_dict(), "N": model.N, "cond_dim": model.cond_dim, "meta": meta}, path)
+    torch.save({"state": model.state_dict(), "N": model.N, "cond_dim": model.cond_dim, "feat": model.feat, "meta": meta}, path)
 
 
 def load(path: str, device: str = "cpu") -> VelocityNet:
     ck = torch.load(path, map_location=device)
-    m = VelocityNet(ck["N"], cond_dim=ck.get("cond_dim", 0)).to(device)
+    m = VelocityNet(ck["N"], cond_dim=ck.get("cond_dim", 0), feat=ck.get("feat", False)).to(device)
     m.load_state_dict(ck["state"])
     return m.eval()
 
