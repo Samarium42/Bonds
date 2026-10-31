@@ -19,6 +19,9 @@ def main(out: str = "data/raw/weekly_returns.csv", start: str = "2012-01-01") ->
     wk = px.resample("W-FRI").last().dropna(how="all")
     lr = np.log(wk).diff()
     lr.to_csv(out)
+    daily = np.log(px).diff()
+    daily.to_csv(out.replace("weekly", "daily"))
+    print(f"also saved daily: {daily.shape[0]} days")
     print(f"saved {out}: {lr.shape[0]} weeks x {lr.shape[1]} names, {lr.index[0].date()} to {lr.index[-1].date()}")
     print(lr.describe().T[["count", "std"]])
 

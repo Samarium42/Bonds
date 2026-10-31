@@ -13,8 +13,8 @@ models, sample cheaply from each, and report the interval of prices rather than 
 |---|---|---|
 | 0 | GBM + LSM pricer, binomial cross-check, statistical tests | done |
 | 1 | Path-vector flow matching, stylized-fact validation | code done, data-scarcity problem found (see below) |
-| 2 | Conditioning on theta = (sigma, s) | todo |
-| 3 | Wire generator into pricer | todo |
+| 2 | Flow conditioned on persistence rho, trained on a daily-calibrated family | done in range; leverage under-captured |
+| 3 | Wire generator into pricer | wired; small check passes (low power), full grid to run on Mac |
 | 4 | Credal sweep and bounds, backtests | todo |
 | 5 | Credit as a jump process | stretch |
 
@@ -140,3 +140,5 @@ shrinkage and led to a wrong "heavy tails are the cause" reading; the monitor no
 **Open decision for Phase 2.** Either (a) train the flow on paths from a calibrated parametric family that spans the
 credal set (flow = amortised simulator over theta; honest about what it is), or (b) shift to higher-frequency data
 to raise the independent-window count, or (c) both. Not decided yet.
+
+Phases 2 and 3 (calibration, conditional generator, steerability table, pricer wiring, caveats): see [docs/phase2_phase3.md](docs/phase2_phase3.md).

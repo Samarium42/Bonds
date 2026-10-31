@@ -19,18 +19,19 @@ from src.flow.cfm_model import VelocityNet, cfm_loss
 
 def train(X: np.ndarray, steps: int = 3000, batch: int = 128, lr: float = 1e-3, ema_decay: float = 0.998,
           ch: int = 64, seed: int = 0, log_every: int = 250, device: str = "cpu", monitor: bool = True,
-          norm: str = "group", glob: bool = False, param: str = "v"):
+          norm: str = "group", glob: bool = False, param: str = "v", C: np.ndarray | None = None):
     torch.manual_seed(seed)
     N = X.shape[1]
-    model = VelocityNet(N, ch=ch, norm=norm, glob=glob, param=param).to(device)
+    model = VelocityNet(N, ch=ch, norm=norm, glob=glob, param=param, cond_dim=0 if C is None else C.shape[1]).to(device)
     ema = copy.deepcopy(model).eval()
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=lr, total_steps=steps, pct_start=0.05)
     data = torch.from_numpy(X).to(device)
+    cdata = None if C is None else torch.from_numpy(C.astype(np.float32)).to(device)
     hist, t0 = [], time.time()
     for it in range(1, steps + 1):
         idx = torch.randint(0, data.shape[0], (batch,), device=device)
-        loss = cfm_loss(model, data[idx])
+        loss = cfm_loss(model, data[idx], None if cdata is None else cdata[idx])
         opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -43,7 +44,7 @@ def train(X: np.ndarray, steps: int = 3000, batch: int = 128, lr: float = 1e-3, 
         hist.append(loss.item())
         if it % log_every == 0:
             msg = f"step {it:6d}  loss {np.mean(hist[-log_every:]):.4f}  ({time.time()-t0:.0f}s)"
-            if monitor:       # cheap health check: generated std should approach the data std (~1)
+            if monitor and C is None:       # cheap health check: generated std should approach the data std (~1)
                 from src.flow.sample import sample_standardised
                 g = sample_standardised(ema, 256, ode_steps=10, seed=0, method="heun")
                 msg += f"  gen_std {g.std():.3f} (data {X.std():.3f})"
@@ -52,12 +53,12 @@ def train(X: np.ndarray, steps: int = 3000, batch: int = 128, lr: float = 1e-3, 
 
 
 def save(model: VelocityNet, path: str, meta: dict) -> None:
-    torch.save({"state": model.state_dict(), "N": model.N, "meta": meta}, path)
+    torch.save({"state": model.state_dict(), "N": model.N, "cond_dim": model.cond_dim, "meta": meta}, path)
 
 
 def load(path: str, device: str = "cpu") -> VelocityNet:
     ck = torch.load(path, map_location=device)
-    m = VelocityNet(ck["N"]).to(device)
+    m = VelocityNet(ck["N"], cond_dim=ck.get("cond_dim", 0)).to(device)
     m.load_state_dict(ck["state"])
     return m.eval()
 

@@ -12,19 +12,21 @@ from src.flow.cfm_model import VelocityNet
 
 @torch.no_grad()
 def sample_standardised(model: VelocityNet, n: int, ode_steps: int = 25, seed: int | None = None,
-                        method: str = "heun", batch: int = 4096) -> np.ndarray:
+                        method: str = "heun", batch: int = 4096, cond: np.ndarray | None = None) -> np.ndarray:
+    """cond: (n, cond_dim) array, or None for an unconditional model."""
     g = torch.Generator().manual_seed(seed) if seed is not None else None
     outs = []
     for s in range(0, n, batch):
         m = min(batch, n - s)
         x = torch.randn(m, model.N, generator=g)
+        c = None if cond is None else torch.from_numpy(np.asarray(cond[s:s + m], dtype=np.float32))
         h = 1.0 / ode_steps
         for i in range(ode_steps):
             t = torch.full((m,), i * h)
-            v = model(x, t)
+            v = model(x, t, c)
             if method == "heun":
                 x_e = x + h * v
-                v2 = model(x_e, torch.full((m,), (i + 1) * h))
+                v2 = model(x_e, torch.full((m,), (i + 1) * h), c)
                 x = x + 0.5 * h * (v + v2)
             else:
                 x = x + h * v
@@ -44,15 +46,27 @@ def martingale_correct(S_raw: np.ndarray, S0: float, r: float, q: float, T: floa
     return S_raw * scale[None, :]
 
 
+def paths_from_weekly(Z: np.ndarray, S0: float, r: float, q: float, T: float, weekly_vol: float) -> np.ndarray:
+    """Unit-variance weekly returns Z (n_paths, N) -> risk-neutral price paths (n_paths, N+1).
+
+    Global demean (drift is reinstated risk-neutrally), scale by weekly_vol, exponentiate, then martingale_correct.
+    Shared by the flow sampler and by the reference simulator so both go through IDENTICAL post-processing.
+    """
+    Z = Z - Z.mean()
+    X = np.concatenate([np.zeros((Z.shape[0], 1)), np.cumsum(weekly_vol * Z, axis=1)], axis=1)
+    return martingale_correct(S0 * np.exp(X), S0, r, q, T)
+
+
 def simulate_flow(model: VelocityNet, S0: float, r: float, q: float, T: float, n_paths: int,
-                  weekly_vol: float, ode_steps: int = 25, seed: int | None = None) -> np.ndarray:
+                  weekly_vol: float, ode_steps: int = 25, seed: int | None = None,
+                  rho: float | None = None) -> np.ndarray:
     """Drop-in for pricer.gbm.simulate_gbm: returns (n_paths, N+1), N = model.N weekly steps.
 
-    Standardised returns are rescaled to `weekly_vol` (demeaned first: the risk-neutral drift is put back
-    by martingale_correct), exponentiated, and corrected to a martingale after discounting.
+    rho is the volatility-persistence condition (required for a conditional model); sigma enters through weekly_vol.
     """
-    z = sample_standardised(model, n_paths, ode_steps, seed)
-    z = z - z.mean()                       # global demean: drift is set risk-neutrally below
-    logret = weekly_vol * z
-    X = np.concatenate([np.zeros((n_paths, 1)), np.cumsum(logret, axis=1)], axis=1)
-    return martingale_correct(S0 * np.exp(X), S0, r, q, T)
+    cond = None
+    if model.cond_dim:
+        from src.data.family import cond_from_rho
+        cond = cond_from_rho(np.full(n_paths, rho))
+    Z = sample_standardised(model, n_paths, ode_steps, seed, cond=cond)
+    return paths_from_weekly(Z, S0, r, q, T, weekly_vol)
