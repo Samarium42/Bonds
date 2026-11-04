@@ -16,7 +16,7 @@ models, sample cheaply from each, and report the interval of prices rather than 
 | 2 | Flow conditioned on persistence rho, trained on a daily-calibrated family | done in range; bulk leverage captured, extreme-tail slightly thin at high rho |
 | 3 | Wire generator into pricer | wired; small check passes (low power), full grid to run on Mac |
 | 4 | Credal sweep and bounds, controlled backtest | code done; controlled backtest on the exact family source (valid but wide intervals, 2 cells below floor); flow-source run and real-data snapshot pending on Mac |
-| 5 | Credit as a jump process | stretch |
+| 5 | Credit as a jump to default (stock-dependent hazard, recovery), flat-vs-jump gap, credal credit dimensions | done on the family source; real-data spread comparison pending |
 
 ## Layout
 
@@ -144,3 +144,5 @@ to raise the independent-window count, or (c) both. Not decided yet.
 Phases 2 and 3 (calibration, conditional generator, steerability table, pricer wiring, caveats): see [docs/phase2_phase3.md](docs/phase2_phase3.md).
 
 Phase 4 (credal sweep, two-stage bounds, tail cap, controlled backtest, caveats): see [docs/phase4.md](docs/phase4.md).
+
+Phase 5 (jump-to-default credit, validation, flat-vs-jump gap, credal extension, caveats): see [docs/phase5.md](docs/phase5.md).

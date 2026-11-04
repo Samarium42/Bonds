@@ -61,7 +61,8 @@ def _basis(x: np.ndarray, degree: int, hinges: tuple) -> np.ndarray:
 
 
 def price_lsm(paths: np.ndarray, bond: Convertible, r: float, spread: float,
-              degree: int = 3, pair_average: bool = False, hinges: str | tuple = "auto") -> dict:
+              degree: int = 3, pair_average: bool = False, hinges: str | tuple = "auto",
+              hazard: np.ndarray | None = None, recovery: float = 0.0, keep_pv: bool = False) -> dict:
     N, n1 = paths.shape
     n = n1 - 1
     dt = bond.maturity / n
@@ -99,8 +100,15 @@ def price_lsm(paths: np.ndarray, bond: Convertible, r: float, spread: float,
         # --- alive paths: roll back and decide
         alive = end > k
         if alive.any():
-            cash[alive] *= dfc
-            eq[alive] *= dfr
+            if hazard is None:
+                cash[alive] *= dfc
+                eq[alive] *= dfr
+            else:
+                # jump to default during step k -> k+1 (hazard[:, k] known at k): survive w.p. q, else recovery*face
+                ia0 = np.where(alive)[0]
+                qk = np.exp(-hazard[ia0, k] * dt)
+                cash[ia0] = dfc * qk * cash[ia0] + dfr * (1.0 - qk) * recovery * bond.face
+                eq[ia0] = dfr * qk * eq[ia0]
             if 0 < k:
                 a = np.where(alive)[0]
                 V = cash[a] + eq[a]
@@ -130,7 +138,9 @@ def price_lsm(paths: np.ndarray, bond: Convertible, r: float, spread: float,
         pv_eff = pv
     price = pv_eff.mean()
     se = pv_eff.std(ddof=1) / np.sqrt(len(pv_eff))
+    out_pv = {"pv": pv_eff} if keep_pv else {}
     return {
+        **out_pv,
         "price": float(price), "se": float(se),
         "ci95": (float(price - 1.96 * se), float(price + 1.96 * se)),
         "frac_called": float(called.mean()),
